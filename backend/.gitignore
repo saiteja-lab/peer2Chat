@@ -1,0 +1,63 @@
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+coverage/
+.tmp/
+.cache/
+
+# Firebase / Cloud Functions (if used)
+.firebase/
+functions/node_modules/
+functions/lib/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript build files
+*.tsbuildinfo
+
+# Debugging files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tgz
+
+# Optional npm cache directory
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# Local testing data
+/test-results/
+coverage-final.json
