@@ -6,6 +6,7 @@ import {
   MessageCircle,
   Code2,
   Home as HomeIcon,
+  Users,
 } from "lucide-react";
 
 const NavItem = ({ icon: Icon, label, active, onClick, collapsed }) => (
@@ -32,7 +33,8 @@ const MainSideBar = () => {
   const navigate = useNavigate();
 
   const isHome = location.pathname === "/";
-  const isChat = location.pathname.startsWith("/chat");
+  const isChat = location.pathname === "/chat";
+  const isGroups = location.pathname.startsWith("/group-chat");
   const isDev = location.pathname.startsWith("/developer");
 
   const go = (path) => navigate(path);
@@ -77,6 +79,15 @@ const MainSideBar = () => {
             label="Chat"
             active={isChat}
             onClick={() => go("/chat")}
+            collapsed={!open}
+          />
+        </div>
+        <div className="group">
+          <NavItem
+            icon={Users}
+            label="Group Chat"
+            active={isGroups}
+            onClick={() => go("/group-chat")}
             collapsed={!open}
           />
         </div>

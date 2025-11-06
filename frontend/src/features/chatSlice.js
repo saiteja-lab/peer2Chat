@@ -8,14 +8,20 @@ const chatSlice = createSlice({
   name: "chat",
   initialState: {
     friends: [],
+    groups: [], // List of groups user is part of
     messages: {}, // { friendName: [message1, message2...] }
+    groupMessages: {}, // { groupId: [message1, message2...] }
     cursors: {}, // { friendName: { nextCursor, hasMore } }
+    groupCursors: {}, // { groupId: { nextCursor, hasMore } }
     unreadCounts: {}, // { friendName: number }
     activeFriend: null,
+    activeGroup: null, // Selected group
     user2: null, // selected chat counterpart's username
     activeSessionId: null,
+    chatType: 'direct', // 'direct' or 'group'
     loading: false,
     friendsLoading: false,
+    groupsLoading: false,
     chatLoading: false,
     error: null,
   },
@@ -94,6 +100,40 @@ const chatSlice = createSlice({
       if (!friendName) return;
       state.unreadCounts[friendName] = 0;
     },
+    // Group-related reducers
+    setGroups: (state, action) => {
+      state.groups = action.payload;
+    },
+    setGroupsLoading: (state, action) => {
+      state.groupsLoading = action.payload;
+    },
+    setActiveGroup: (state, action) => {
+      state.activeGroup = action.payload;
+      state.chatType = 'group';
+    },
+    setChatType: (state, action) => {
+      state.chatType = action.payload;
+    },
+    setGroupMessages: (state, action) => {
+      const { groupId, messages } = action.payload;
+      state.groupMessages[groupId] = messages;
+    },
+    prependGroupMessages: (state, action) => {
+      const { groupId, older } = action.payload || {};
+      if (!groupId || !Array.isArray(older)) return;
+      const current = state.groupMessages[groupId] || [];
+      state.groupMessages[groupId] = [...older, ...current];
+    },
+    sendGroupMessageLocal: (state, action) => {
+      const { groupId, message } = action.payload;
+      if (!state.groupMessages[groupId]) state.groupMessages[groupId] = [];
+      state.groupMessages[groupId].push(message);
+    },
+    setGroupCursor: (state, action) => {
+      const { groupId, nextCursor, hasMore } = action.payload || {};
+      if (!groupId) return;
+      state.groupCursors[groupId] = { nextCursor: nextCursor || null, hasMore: !!hasMore };
+    },
   },
 });
 
@@ -116,6 +156,14 @@ export const {
   clearUnreadForFriend,
   prependMessagesForFriend,
   setCursorForFriend,
+  setGroups,
+  setGroupsLoading,
+  setActiveGroup,
+  setChatType,
+  setGroupMessages,
+  prependGroupMessages,
+  sendGroupMessageLocal,
+  setGroupCursor,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
@@ -226,9 +274,71 @@ export const selectFriendAndLoadChat = (friend) => async (dispatch, getState) =>
 
     // Optimistically clear unread count for this friend on open
     dispatch(clearUnreadForFriend(friendName));
+    
+    // Set chat type to direct
+    dispatch(setChatType('direct'));
   } catch (error) {
     console.error('Error selecting friend / loading chat:', error);
     const message = error.response?.data?.message || error.message || 'Failed to load chat';
+    dispatch(setError(message));
+  } finally {
+    dispatch(setChatLoading(false));
+  }
+};
+
+// --- Async Thunk: Fetch Groups ---
+export const fetchGroups = () => async (dispatch, getState) => {
+  try {
+    dispatch(setGroupsLoading(true));
+    
+    const state = getState();
+    const authUser = state.auth.currentUser;
+    const userName = (typeof authUser === 'object' && (authUser?.userName || authUser?.username)) || authUser;
+    
+    if (!userName || typeof userName !== 'string') {
+      throw new Error("User not logged in or username missing");
+    }
+    
+    const res = await api.get(`/api/chat/group/user/${userName}`);
+    const groups = res.data.groups || [];
+    
+    dispatch(setGroups(groups));
+  } catch (error) {
+    console.error("❌ Error fetching groups:", error);
+    const message = error.response?.data?.error || error.message || "Failed to load groups";
+    dispatch(setError(message));
+  } finally {
+    dispatch(setGroupsLoading(false));
+  }
+};
+
+// --- Async Thunk: Select Group and Load Chat ---
+export const selectGroupAndLoadChat = (group) => async (dispatch, getState) => {
+  dispatch(setChatLoading(true));
+  try {
+    const groupId = group?.groupId || group?.id;
+    if (!groupId) {
+      throw new Error('Invalid group selection');
+    }
+    
+    // Set UI selection
+    dispatch(setActiveGroup(group));
+    dispatch(setActiveFriend(null)); // Clear friend selection
+    dispatch(setUser2(null));
+    dispatch(setActiveSessionId(groupId)); // Use groupId as session ID for consistency
+    dispatch(setChatType('group'));
+    
+    // Load group messages (initial load: 10 messages)
+    const messagesRes = await api.get(`/api/chat/group/${groupId}/messages`, { params: { limit: 10 } });
+    const messages = messagesRes.data?.messages || [];
+    const nextCursor = messagesRes.data?.nextCursor || null;
+    const hasMore = !!messagesRes.data?.hasMore;
+    
+    dispatch(setGroupMessages({ groupId, messages }));
+    dispatch(setGroupCursor({ groupId, nextCursor, hasMore }));
+  } catch (error) {
+    console.error('Error selecting group / loading chat:', error);
+    const message = error.response?.data?.error || error.message || 'Failed to load group chat';
     dispatch(setError(message));
   } finally {
     dispatch(setChatLoading(false));

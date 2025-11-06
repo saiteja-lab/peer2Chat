@@ -7,6 +7,7 @@ import { ChatPage } from './pages/ChatPage.jsx';
 import { ProtectedRoute } from './routes/ProtectedROutes.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import { TermsPage } from "./components/common/TermsPage.jsx"
+import { GroupChat } from './pages/GroupChat.jsx';
 
 const DeveloperPage = () => (
   <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-200">
@@ -40,6 +41,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path='/group-chat'
+          element={
+            <ProtectedRoute>
+              <GroupChat />
             </ProtectedRoute>
           }
         />

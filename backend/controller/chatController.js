@@ -592,3 +592,294 @@ export const getUnreadCounts = async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch unread counts", details: err.message });
   }
 };
+
+// ==================== GROUP CHAT FUNCTIONALITY ====================
+
+/**
+ * Create a new group
+ */
+export const createGroup = async (req, res) => {
+  try {
+    const { groupName, creatorId, memberIds } = req.body;
+
+    if (!groupName || !creatorId || !memberIds || !Array.isArray(memberIds)) {
+      return res.status(400).json({ error: "groupName, creatorId, and memberIds array are required" });
+    }
+
+    if (memberIds.length < 2) {
+      return res.status(400).json({ error: "A group must have at least 2 members" });
+    }
+
+    // Validate all users exist
+    const allUserIds = [creatorId, ...memberIds.filter(id => id !== creatorId)];
+    const userChecks = await checkUsersExist(allUserIds);
+    const nonExistentUsers = userChecks.filter(check => !check.exists).map(check => check.userId);
+
+    if (nonExistentUsers.length > 0) {
+      return res.status(404).json({
+        error: "One or more users do not exist",
+        nonExistentUsers
+      });
+    }
+
+    // Create group
+    const groupRef = db.collection("groups").doc();
+    const groupId = groupRef.id;
+
+    await groupRef.set({
+      groupId,
+      groupName: groupName.trim(),
+      creatorId,
+      members: allUserIds,
+      createdAt: FieldValue.serverTimestamp(),
+      lastMessageAt: FieldValue.serverTimestamp(),
+      messageCount: 0,
+      isGroup: true
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Group created successfully",
+      groupId,
+      groupName: groupName.trim()
+    });
+  } catch (err) {
+    console.error("Error in createGroup:", err);
+    return res.status(500).json({ error: "Failed to create group", details: err.message });
+  }
+};
+
+/**
+ * Get all groups for a user
+ */
+export const getUserGroups = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const userExists = await checkUserExists(userId);
+    if (!userExists) {
+      return res.status(404).json({ error: "User does not exist" });
+    }
+
+    const groupsSnapshot = await db
+      .collection("groups")
+      .where("members", "array-contains", userId)
+      .orderBy("lastMessageAt", "desc")
+      .get();
+
+    const groups = groupsSnapshot.docs.map(doc => ({
+      groupId: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate?.() || null,
+      lastMessageAt: doc.data().lastMessageAt?.toDate?.() || null,
+    }));
+
+    return res.status(200).json({ groups });
+  } catch (err) {
+    console.error("Error in getUserGroups:", err);
+    return res.status(500).json({ error: "Failed to fetch groups", details: err.message });
+  }
+};
+
+/**
+ * Send message to a group
+ */
+export const sendGroupMessage = async (req, res) => {
+  try {
+    const { groupId, sender, message } = req.body;
+
+    if (!groupId || !sender || !message) {
+      return res.status(400).json({ error: "groupId, sender, and message are required" });
+    }
+
+    if (typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Message cannot be empty" });
+    }
+
+    if (message.length > 5000) {
+      return res.status(400).json({ error: "Message exceeds maximum length of 5000 characters" });
+    }
+
+    const senderExists = await checkUserExists(sender);
+    if (!senderExists) {
+      return res.status(404).json({ error: "Sender does not exist" });
+    }
+
+    const groupRef = db.collection("groups").doc(groupId);
+    const groupDoc = await groupRef.get();
+
+    if (!groupDoc.exists) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    const members = groupDoc.data().members || [];
+    if (!members.includes(sender)) {
+      return res.status(403).json({ error: "Sender is not a member of this group" });
+    }
+
+    const messagesRef = groupRef.collection("messages");
+    const batch = db.batch();
+
+    const newMessageRef = messagesRef.doc();
+    batch.set(newMessageRef, {
+      sender,
+      message: message.trim(),
+      timestamp: FieldValue.serverTimestamp(),
+      deleted: false,
+    });
+
+    batch.update(groupRef, {
+      lastMessageAt: FieldValue.serverTimestamp(),
+      lastMessage: message.trim().substring(0, 100),
+      lastSender: sender,
+      messageCount: FieldValue.increment(1),
+    });
+
+    await batch.commit();
+
+    // Emit to group room
+    const io = getIO?.();
+    if (io) {
+      io.to(groupId).emit("receiveGroupMessage", {
+        groupId,
+        messageId: newMessageRef.id,
+        sender,
+        message: message.trim(),
+        timestamp: Date.now()
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Message sent successfully",
+      messageId: newMessageRef.id
+    });
+  } catch (err) {
+    console.error("Error in sendGroupMessage:", err);
+    return res.status(500).json({ error: "Failed to send group message", details: err.message });
+  }
+};
+
+/**
+ * Get messages for a group
+ */
+export const getGroupMessages = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { limit = 50, lastMessageId } = req.query;
+
+    if (!groupId) {
+      return res.status(400).json({ error: "groupId is required" });
+    }
+
+    const parsedLimit = parseInt(limit);
+    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      return res.status(400).json({ error: "Limit must be between 1 and 100" });
+    }
+
+    const groupRef = db.collection("groups").doc(groupId);
+    const groupDoc = await groupRef.get();
+    if (!groupDoc.exists) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    let q = groupRef.collection("messages").orderBy("timestamp", "desc").limit(parsedLimit);
+
+    if (lastMessageId) {
+      const cursorDoc = await groupRef.collection("messages").doc(lastMessageId).get();
+      if (cursorDoc.exists) {
+        q = q.startAfter(cursorDoc);
+      }
+    }
+
+    const snap = await q.get();
+    const docs = snap.docs;
+
+    const nextCursor = docs.length > 0 ? docs[docs.length - 1].id : null;
+    const hasMore = docs.length === parsedLimit;
+
+    const messages = docs
+      .map((doc) => ({ id: doc.id, ...doc.data(), timestamp: doc.data().timestamp?.toDate?.() || null }))
+      .reverse();
+
+    return res.status(200).json({ messages, count: messages.length, hasMore, nextCursor });
+  } catch (err) {
+    console.error("Error in getGroupMessages:", err);
+    return res.status(500).json({ error: "Failed to fetch group messages", details: err.message });
+  }
+};
+
+/**
+ * Delete a group message
+ */
+export const deleteGroupMessage = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { userName, message } = req.body;
+
+    if (!groupId || !userName || !message) {
+      return res.status(400).json({ error: "groupId, userName, and message are required" });
+    }
+
+    const groupRef = db.collection("groups").doc(groupId);
+    const groupDoc = await groupRef.get();
+
+    if (!groupDoc.exists) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    const members = groupDoc.data().members || [];
+    if (!members.includes(userName)) {
+      return res.status(403).json({ error: "User is not a member of this group" });
+    }
+
+    const messagesRef = groupRef.collection("messages");
+    const snapshot = await messagesRef
+      .where("sender", "==", userName)
+      .where("message", "==", message)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ error: "No matching message found to delete" });
+    }
+
+    let targetDoc = snapshot.docs[0];
+    if (snapshot.docs.length > 1) {
+      targetDoc = snapshot.docs
+        .slice()
+        .sort((a, b) => {
+          const ta = a.data().timestamp?.toMillis?.() || 0;
+          const tb = b.data().timestamp?.toMillis?.() || 0;
+          return tb - ta;
+        })[0];
+    }
+
+    await targetDoc.ref.update({
+      deleted: true,
+      deletedAt: FieldValue.serverTimestamp(),
+      deletedBy: userName,
+    });
+
+    const io = getIO?.();
+    if (io) {
+      io.to(groupId).emit("groupMessageDeleted", {
+        groupId,
+        messageId: targetDoc.id,
+        sender: userName,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Message deleted successfully",
+      messageId: targetDoc.id,
+    });
+  } catch (err) {
+    console.error("Error in deleteGroupMessage:", err);
+    return res.status(500).json({ error: "Failed to delete group message", details: err.message });
+  }
+};

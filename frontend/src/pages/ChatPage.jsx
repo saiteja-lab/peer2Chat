@@ -3,6 +3,7 @@ import { useSelector } from "react-redux";
 import Sidebar from "../components/common/SideBar";
 import { ChatWindow } from "../components/chat/ChatWindow";
 import { Navbar } from "../components/common/Navbar";
+import MainSideBar from "../components/common/MainSideBar";
 import { connectSocket } from "../services/socket";
 import { AddFriend } from "../components/chat/AddFriend";
 
@@ -25,6 +26,9 @@ export const ChatPage = () => {
       <Navbar />
       <div className="h-16" />
       <div className="flex h-[calc(100vh-64px)] w-full bg-gradient-to-br from-gray-50 to-gray-200 relative overflow-hidden min-h-0">
+        {/* Main Navigation Sidebar */}
+        <MainSideBar />
+        
         {/* Friends Sidebar Container */}
         <div className="relative flex-shrink-0 bg-white shadow-md border-r border-gray-200 h-full">
           <Sidebar onToggleAddFriend={handleToggle} />

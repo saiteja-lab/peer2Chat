@@ -38,6 +38,19 @@ const setupSocket = (server) => {
       socket.leave(sessionId);
     });
 
+    // Group chat socket events
+    socket.on("joinGroup", (groupId) => {
+      if (!groupId) return;
+      socket.join(groupId);
+      console.log(`Socket ${socket.id} joined group ${groupId}`);
+    });
+
+    socket.on("leaveGroup", (groupId) => {
+      if (!groupId) return;
+      socket.leave(groupId);
+      console.log(`Socket ${socket.id} left group ${groupId}`);
+    });
+
     // Do not relay 'sendMessage' here; the HTTP controller will emit authoritative events
 
     socket.on("disconnect", () => {

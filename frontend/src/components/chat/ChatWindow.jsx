@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { chatService } from "../../services/chatService";
 import { getSocket, onReceiveMessage, on } from "../../services/socket";
 import { sendMessageLocal, setMessagesForFriend, prependMessagesForFriend, setCursorForFriend } from "../../features/chatSlice";
-import { Loader2 } from "lucide-react";
+import { Loader2, Send, Trash2, UserCircle } from "lucide-react";
 
 export const ChatWindow = () => {
   const { currentUser } = useSelector((state) => state.auth);
@@ -220,160 +220,170 @@ export const ChatWindow = () => {
     }
   };
 
-  return (
-    <div className="flex flex-col flex-1 bg-white shadow-lg rounded-2xl mx-3 my-4 overflow-hidden border border-gray-200">
-      {/* Chat Header */}
-      <div className="p-4 border-b bg-gradient-to-r from-blue-600 to-blue-500 text-white flex justify-between items-center">
-        <h2 className="text-lg font-semibold">
-          {user2 ? `Chat with ${user2}` : "Chat Window"}
-        </h2>
-        {user2 && (
-          <span className="text-sm opacity-90">
-            {messages.length} message{messages.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
-
-      {/* Messages Section */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 relative">
-        {!user2 && (
-          <p className="text-gray-500 text-center mt-10">
-            Select a friend to start chatting 💬
+  if (!user2) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="text-center">
+          <UserCircle size={64} className="mx-auto text-gray-300 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">
+            No Friend Selected
+          </h3>
+          <p className="text-gray-500">
+            Select a friend from the sidebar to start chatting
           </p>
-        )}
+        </div>
+      </div>
+    );
+  }
 
-        {user2 && chatLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 backdrop-blur-sm z-10">
-            <Loader2 className="animate-spin mr-2 text-indigo-600" size={28} />
-            <span className="text-indigo-700 font-medium">Loading chat…</span>
+  return (
+    <div className="flex-1 flex flex-col h-full">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 shadow-md">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+              <UserCircle size={24} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">{user2}</h2>
+              <p className="text-sm text-white/80">
+                {messages.length} {messages.length === 1 ? "message" : "messages"}
+              </p>
+            </div>
           </div>
-        )}
-
-        {/* Load older */}
-        {user2 && !chatLoading && canLoadOlder && (
-          <div className="flex justify-center mb-3">
-            <button
-              onClick={loadOlder}
-              disabled={loadingOlder}
-              className="text-sm text-indigo-600 hover:text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full disabled:opacity-50"
-            >
-              {loadingOlder ? "Loading..." : "Load older messages"}
-            </button>
-          </div>
-        )}
-
-        {user2 &&
-          !chatLoading &&
-          messages.map((msg, i) => {
-            const mine = isMine(msg);
-            const d = getMsgDate(msg);
-            const prev = i > 0 ? getMsgDate(messages[i - 1]) : null;
-            const showDateHeader = !prev || !isSameDay(d, prev);
-            return (
-              <div key={i} className="my-1 cw-fade-in">
-                {showDateHeader && (
-                  <div className="flex justify-center my-3">
-                    <span className="text-xs bg-gray-200 px-3 py-1 rounded-full text-gray-700">
-                      {formatDayLabel(d)}
-                    </span>
-                  </div>
-                )}
-                <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`relative group px-4 py-2 max-w-[75%] rounded-2xl shadow-sm ${
-                      mine
-                        ? "bg-blue-600 text-white rounded-br-none"
-                        : "bg-white border border-gray-300 text-gray-800 rounded-bl-none"
-                    }`}
-                  >
-                    <div>
-                      {msg?.deleted ? (
-                        <span className={mine ? "text-white/80 italic" : "text-gray-500 italic"}>
-                          Message deleted
-                        </span>
-                      ) : (
-                        msg.message
-                      )}
-                    </div>
-                    <div
-                      className={`text-[10px] mt-1 select-none ${
-                        mine ? "text-white/80 text-right" : "text-gray-500 text-left"
-                      }`}
-                    >
-                      {(() => {
-                        const ts =
-                          msg?.timestamp ||
-                          msg?.createdAt ||
-                          msg?.time ||
-                          msg?.sentAt ||
-                          msg?.date;
-                        if (!ts) return "";
-                        const d2 =
-                          typeof ts === "number" ? new Date(ts) : new Date(ts);
-                        if (isNaN(d2.getTime())) return "";
-                        const t = d2.toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        });
-                        return mine
-                          ? `${t} • ${msg?.read ? "Seen" : "Delivered"}`
-                          : t;
-                      })()}
-                    </div>
-
-                    {mine && !msg?.deleted && (
-                      <button
-                        className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full shadow-md hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-all"
-                        onClick={() => handleDelete(msg)}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        <div ref={listEndRef} />
+        </div>
       </div>
 
-      {/* Message Input */}
-      {user2 && (
-        <div className="p-3 border-t bg-white flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Type your message..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        {chatLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="animate-spin text-indigo-600" size={32} />
+          </div>
+        ) : (
+          <>
+            {/* Load Older Messages Button */}
+            {canLoadOlder && (
+              <div className="text-center">
+                <button
+                  onClick={loadOlder}
+                  disabled={loadingOlder}
+                  className="px-4 py-2 bg-white text-indigo-600 rounded-lg shadow hover:bg-gray-50 transition disabled:opacity-50"
+                >
+                  {loadingOlder ? "Loading..." : "Load Older Messages"}
+                </button>
+              </div>
+            )}
+
+            {/* Messages */}
+            {messages.length === 0 ? (
+              <div className="text-center text-gray-500 mt-8">
+                <p>No messages yet. Start the conversation!</p>
+              </div>
+            ) : (
+              messages.map((msg, i) => {
+                const mine = isMine(msg);
+                const d = getMsgDate(msg);
+                const prev = i > 0 ? getMsgDate(messages[i - 1]) : null;
+                const showDateHeader = !prev || !isSameDay(d, prev);
+                
+                return (
+                  <div key={i}>
+                    {showDateHeader && (
+                      <div className="flex justify-center my-3">
+                        <span className="text-xs bg-gray-200 px-3 py-1 rounded-full text-gray-700">
+                          {formatDayLabel(d)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[70%] ${mine ? "items-end" : "items-start"}`}>
+                        {/* Message Bubble */}
+                        <div
+                          className={`relative group px-4 py-2 rounded-2xl shadow ${
+                            mine
+                              ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-none"
+                              : "bg-white text-gray-800 rounded-bl-none"
+                          }`}
+                        >
+                          {msg?.deleted ? (
+                            <p className="italic text-sm opacity-70">
+                              Message deleted
+                            </p>
+                          ) : (
+                            <p className="break-words">{msg.message}</p>
+                          )}
+
+                          {/* Delete Button (only for own messages) */}
+                          {mine && !msg?.deleted && (
+                            <button
+                              onClick={() => handleDelete(msg)}
+                              className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                              title="Delete message"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Timestamp */}
+                        <div
+                          className={`text-xs text-gray-500 mt-1 px-2 ${
+                            mine ? "text-right" : "text-left"
+                          }`}
+                        >
+                          {(() => {
+                            const ts = msg?.timestamp || msg?.createdAt || msg?.time || msg?.sentAt || msg?.date;
+                            if (!ts) return "";
+                            const d2 = typeof ts === "number" ? new Date(ts) : new Date(ts);
+                            if (isNaN(d2.getTime())) return "";
+                            const t = d2.toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            });
+                            return mine ? `${t} • ${msg?.read ? "Seen" : "Delivered"}` : t;
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={listEndRef} />
+          </>
+        )}
+      </div>
+
+      {/* Input Area */}
+      <div className="border-t border-gray-200 bg-white p-4">
+        <div className="flex items-end gap-2">
+          <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
+            onKeyPress={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
+            placeholder="Type a message..."
+            rows={1}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none"
+            style={{ minHeight: "40px", maxHeight: "120px" }}
           />
           <button
             onClick={handleSend}
-            disabled={!message?.trim() || !activeSessionId}
-            className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            disabled={!message.trim() || !activeSessionId}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
+            <Send size={20} />
             Send
           </button>
         </div>
-      )}
-
-      <style>
-        {`
-          @keyframes cw-fade-in {
-            from { opacity: 0; transform: translateY(6px) scale(0.98); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-          }
-          .cw-fade-in {
-            animation: cw-fade-in 300ms ease-out;
-          }
-        `}
-      </style>
+      </div>
     </div>
   );
 };
